@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest
-
 from ai_automation_harness import Risk, SideEffect, ToolSpec, VerificationStatus
 from ai_automation_harness.verification import (
     CheckResult,
@@ -118,8 +116,3 @@ def test_verification_result_serialises() -> None:
     data = run_checks([invariant("ok", lambda c: True)], ctx_for({})).to_dict()
     assert data["status"] == "VERIFIED"
     assert data["checks"][0]["name"] == "ok"
-
-
-@pytest.mark.parametrize("status", list(VerificationStatus))
-def test_not_run_is_distinct_from_every_pass_state(status: VerificationStatus) -> None:
-    assert (status is VerificationStatus.NOT_RUN) == (status.value == "NOT_RUN")

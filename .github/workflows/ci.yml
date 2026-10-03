@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install
+        run: python -m pip install -e ".[dev]"
+
+      - name: Lint
+        run: |
+          ruff check .
+          ruff format --check .
+
+      - name: Type check
+        run: mypy
+
+      - name: Tests with coverage gate
+        run: pytest --cov --cov-report=term-missing
+
+      - name: CLI smoke test
+        run: |
+          set -e
+          ai-automation-harness tools
+          ai-automation-harness policy check --policy examples/policy.yaml
+          ai-automation-harness simulate --policy examples/policy.yaml \
+            --scenarios examples/scenarios.json --audit-out "$RUNNER_TEMP/audit.jsonl" \
+            --evidence-dir "$RUNNER_TEMP/evidence"
+          ai-automation-harness audit verify "$RUNNER_TEMP/audit.jsonl"
+          ai-automation-harness simulate --policy examples/policy-email-enabled.yaml \
+            --scenarios examples/scenarios-email-enabled.json
+          code=0
+          ai-automation-harness evaluate --policy examples/policy.yaml --tool delete_file \
+            --action delete --scope files:delete --args '{"path": "docs/readme.txt"}' || code=$?
+          test "$code" -eq 20

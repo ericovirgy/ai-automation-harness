@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-label="ai-automation-harness">
+  <rect width="1280" height="640" fill="#0d1117"/>
+  <rect x="0" y="0" width="12" height="640" fill="#2f81f7"/>
+  <text x="80" y="150" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="30" fill="#8b949e" letter-spacing="2">REFERENCE IMPLEMENTATION</text>
+  <text x="80" y="235" font-family="DejaVu Sans Mono, Menlo, monospace" font-size="76" font-weight="700" fill="#f0f6fc">ai-automation-harness</text>
+  <text x="80" y="305" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="34" fill="#c9d1d9">Policy-controlled tools, approval gates,</text>
+  <text x="80" y="352" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="34" fill="#c9d1d9">verification and audit evidence for AI automation.</text>
+  <g font-family="DejaVu Sans Mono, Menlo, monospace" font-size="24" text-anchor="middle">
+    <rect x="80" y="440" width="170" height="64" rx="8" fill="#161b22" stroke="#30363d"/>
+    <text x="165" y="480" fill="#f0f6fc">request</text>
+    <rect x="290" y="440" width="170" height="64" rx="8" fill="#161b22" stroke="#30363d"/>
+    <text x="375" y="480" fill="#f0f6fc">policy</text>
+    <rect x="500" y="440" width="190" height="64" rx="8" fill="#161b22" stroke="#d29922"/>
+    <text x="595" y="480" fill="#d29922">approval</text>
+    <rect x="730" y="440" width="170" height="64" rx="8" fill="#161b22" stroke="#30363d"/>
+    <text x="815" y="480" fill="#f0f6fc">execute</text>
+    <rect x="940" y="440" width="190" height="64" rx="8" fill="#161b22" stroke="#3fb950"/>
+    <text x="1035" y="480" fill="#3fb950">verify</text>
+    <rect x="1170" y="440" width="50" height="64" rx="8" fill="#161b22" stroke="#30363d"/>
+    <text x="1195" y="482" fill="#f0f6fc">log</text>
+  </g>
+  <g stroke="#6e7681" stroke-width="3" fill="none">
+    <path d="M250 472h40M460 472h40M690 472h40M900 472h40M1130 472h40"/>
+  </g>
+  <text x="80" y="570" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="26" fill="#8b949e">ALLOW / DENY / REQUIRE_APPROVAL  ·  VERIFIED / NOT_VERIFIED / UNCERTAIN</text>
+</svg>

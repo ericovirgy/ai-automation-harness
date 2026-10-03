@@ -233,3 +233,16 @@ def test_module_entry_point_runs_offline() -> None:
         env=env,
     )
     assert proc.returncode == 0 and "ai-automation-harness" in proc.stdout
+
+
+@pytest.mark.parametrize(
+    ("policy", "scenarios"), [(POLICY, SCENARIOS), (EMAIL_POLICY, EMAIL_SCENARIOS)]
+)
+def test_completed_is_reachable_only_through_verified(policy: str, scenarios: str) -> None:
+    from ai_automation_harness import Outcome, VerificationStatus
+
+    results, _, _ = run_scenarios(load_scenarios(scenarios), Policy.load(policy))
+    for item in results:
+        completed = item.result.outcome is Outcome.COMPLETED
+        verified = item.result.verification_status is VerificationStatus.VERIFIED
+        assert completed == verified, item.scenario.name

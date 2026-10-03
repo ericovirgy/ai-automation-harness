@@ -34,6 +34,7 @@ class ArgSpec:
     pattern: str | None = None
     min_value: int | None = None
     max_value: int | None = None
+    sensitive: bool = False  # value is masked entirely in audit events and evidence
 
     def __post_init__(self) -> None:
         if self.type not in ("str", "int", "bool"):

@@ -154,7 +154,7 @@ def sha256_hex(text: str) -> str:
 
 
 def _check_identifier(value: object, field_name: str) -> str:
-    if not isinstance(value, str) or not IDENTIFIER_RE.fullmatch(value):
+    if type(value) is not str or not IDENTIFIER_RE.fullmatch(value):
         raise MalformedRequestError(f"field '{field_name}' must match {IDENTIFIER_RE.pattern}")
     return value
 
@@ -180,18 +180,18 @@ class ToolRequest:
         _check_identifier(self.tool, "tool")
         _check_identifier(self.action, "action")
         _check_identifier(self.requester, "requester")
-        if not isinstance(self.scope, str) or not SCOPE_RE.fullmatch(self.scope):
+        if type(self.scope) is not str or not SCOPE_RE.fullmatch(self.scope):
             raise MalformedRequestError("field 'scope' must look like 'resource:verb'")
         if self.side_effect is not None and not isinstance(self.side_effect, SideEffect):
             raise MalformedRequestError("field 'side_effect' has the wrong type")
         if not isinstance(self.arguments, Mapping) or len(self.arguments) > MAX_ARGUMENTS:
             raise MalformedRequestError("field 'arguments' must be a small mapping")
         for key, value in self.arguments.items():
-            if not isinstance(key, str) or not IDENTIFIER_RE.fullmatch(key):
+            if type(key) is not str or not IDENTIFIER_RE.fullmatch(key):
                 raise MalformedRequestError("argument names must be simple identifiers")
-            if not isinstance(value, str | int | bool):
+            if type(value) not in (str, int, bool):
                 raise MalformedRequestError(f"argument '{key}' must be a string, int or bool")
-            if isinstance(value, str) and len(value) > MAX_ARGUMENT_STRING:
+            if type(value) is str and len(value) > MAX_ARGUMENT_STRING:
                 raise MalformedRequestError(f"argument '{key}' is too long")
         object.__setattr__(self, "arguments", MappingProxyType(dict(self.arguments)))
 
@@ -200,9 +200,9 @@ class ToolRequest:
         if not isinstance(raw, Mapping):
             raise MalformedRequestError("request must be a mapping")
         allowed = {"request_id", "tool", "action", "scope", "arguments", "requester", "side_effect"}
-        unknown = sorted(str(k) for k in raw if k not in allowed)
+        unknown = [k for k in raw if k not in allowed]
         if unknown:
-            raise MalformedRequestError(f"unknown request fields: {unknown}")
+            raise MalformedRequestError(f"request has {len(unknown)} unknown field(s)")
         missing = [k for k in ("request_id", "tool", "action", "scope") if k not in raw]
         if missing:
             raise MalformedRequestError(f"missing request fields: {missing}")

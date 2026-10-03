@@ -219,7 +219,8 @@ def test_audit_summary_of_empty_file(tmp_path: Path, capsys: pytest.CaptureFixtu
     empty = tmp_path / "empty.jsonl"
     empty.write_text("")
     assert main(["audit", "summary", str(empty)]) == 0
-    assert main(["audit", "verify", str(empty)]) == 0
+    assert main(["audit", "verify", str(empty)]) == 2  # an empty log proves nothing
+    assert main(["audit", "verify", str(empty), "--allow-empty"]) == 0
     capsys.readouterr()
 
 

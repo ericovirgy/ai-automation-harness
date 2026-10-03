@@ -114,21 +114,27 @@ def _cmd_simulate(args: argparse.Namespace) -> int:
 
 
 def _cmd_audit_verify(args: argparse.Namespace) -> int:
-    key = None
-    if args.hmac_key_env:
-        value = os.environ.get(args.hmac_key_env)
-        if not value:
-            raise HarnessError(f"environment variable {args.hmac_key_env} is not set")
-        key = value.encode("utf-8")
+    key = _hmac_key(args.hmac_key_env)
     events = load_jsonl(args.file)
+    if not events and not args.allow_empty:
+        raise HarnessError("audit log is empty (use --allow-empty to accept)")
     count = verify_chain(events, key)
     print(f"audit chain valid: {count} events, head {events[-1].hash[:16] if events else '-'}")
     return EXIT_OK
 
 
+def _hmac_key(env_name: str | None) -> bytes | None:
+    if not env_name:
+        return None
+    value = os.environ.get(env_name)
+    if not value:
+        raise HarnessError(f"environment variable {env_name} is not set")
+    return value.encode("utf-8")
+
+
 def _cmd_audit_summary(args: argparse.Namespace) -> int:
     events = load_jsonl(args.file)
-    verify_chain(events)
+    verify_chain(events, _hmac_key(args.hmac_key_env))
     finals = [e for e in events if e.event_type == "request.finished"]
     print(f"{len(events)} events, {len(finals)} finished requests")
     for title, values in (
@@ -198,9 +204,11 @@ def build_parser() -> argparse.ArgumentParser:
     av = audit_sub.add_parser("verify", help="verify the hash chain of a JSONL audit log")
     av.add_argument("file")
     av.add_argument("--hmac-key-env", help="name of an env var holding the HMAC key")
+    av.add_argument("--allow-empty", action="store_true", help="accept a log with no events")
     av.set_defaults(func=_cmd_audit_verify)
     asum = audit_sub.add_parser("summary", help="summarise a JSONL audit log")
     asum.add_argument("file")
+    asum.add_argument("--hmac-key-env", help="name of an env var holding the HMAC key")
     asum.set_defaults(func=_cmd_audit_summary)
 
     pol = sub.add_parser("policy", help="policy utilities")

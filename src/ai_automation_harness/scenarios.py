@@ -66,6 +66,7 @@ def parse_scenarios(raw: object) -> list[Scenario]:
         raise HarnessError("scenarios file must contain a JSON list")
     scenarios: list[Scenario] = []
     names: set[str] = set()
+    request_ids: set[str] = set()
     for item in raw:
         if not isinstance(item, Mapping) or set(item) - SCENARIO_KEYS:
             raise HarnessError("scenario must be an object with known keys only")
@@ -80,6 +81,11 @@ def parse_scenarios(raw: object) -> list[Scenario]:
         if not isinstance(name, str) or name in names or not isinstance(request, Mapping):
             raise HarnessError("scenario names must be unique strings and request an object")
         names.add(name)
+        request_id = request.get("request_id")
+        if isinstance(request_id, str):
+            if request_id in request_ids:
+                raise HarnessError(f"scenario '{name}' reuses request_id")
+            request_ids.add(request_id)
         approval = item.get("approval", "none")
         faults = frozenset(item.get("faults", []))
         if approval not in APPROVAL_ACTIONS or faults - FAULTS:

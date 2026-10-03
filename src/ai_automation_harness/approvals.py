@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
@@ -22,6 +23,7 @@ class ApprovalRecord:
     request_id: str
     tool: str
     action: str
+    scope: str
     requester: str
     risk: Risk
     arguments_digest: str
@@ -52,8 +54,13 @@ class ApprovalGate:
         self._clock = clock
         self._ttl = timedelta(seconds=ttl_seconds)
         self._records: dict[str, ApprovalRecord] = {}
+        self._lock = threading.RLock()  # consume() is check-then-set; it must be atomic
 
     def open(self, request: ToolRequest, risk: Risk) -> ApprovalRecord:
+        with self._lock:
+            return self._open(request, risk)
+
+    def _open(self, request: ToolRequest, risk: Risk) -> ApprovalRecord:
         approval_id = f"appr-{request.request_id}"
         if approval_id in self._records:
             raise ApprovalError("duplicate", "an approval already exists for this request")
@@ -63,6 +70,7 @@ class ApprovalGate:
             request_id=request.request_id,
             tool=request.tool,
             action=request.action,
+            scope=request.scope,
             requester=request.requester,
             risk=risk,
             arguments_digest=request.arguments_digest,
@@ -74,6 +82,10 @@ class ApprovalGate:
         return record
 
     def get(self, approval_id: str) -> ApprovalRecord:
+        with self._lock:
+            return self._get(approval_id)
+
+    def _get(self, approval_id: str) -> ApprovalRecord:
         record = self._records.get(approval_id)
         if record is None:
             raise ApprovalError("unknown", "no such approval")
@@ -95,12 +107,18 @@ class ApprovalGate:
     def _decide(
         self, approval_id: str, approver: str, note: str, status: ApprovalStatus
     ) -> ApprovalRecord:
+        with self._lock:
+            return self._decide_locked(approval_id, approver, note, status)
+
+    def _decide_locked(
+        self, approval_id: str, approver: str, note: str, status: ApprovalStatus
+    ) -> ApprovalRecord:
         if not isinstance(approver, str) or not IDENTIFIER_RE.fullmatch(approver):
             raise ApprovalError("invalid_approver", "approver must be a named identity")
-        record = self.get(approval_id)
+        record = self._get(approval_id)
         if record.status is not ApprovalStatus.PENDING:
             raise ApprovalError("not_pending", f"approval is {record.status.value}, not PENDING")
-        if approver == record.requester:
+        if approver.casefold() == record.requester.casefold():
             raise ApprovalError("self_approval", "the requester cannot decide its own approval")
         record = replace(
             record, status=status, decided_by=approver, decided_at=self._clock(), note=note[:256]
@@ -110,7 +128,11 @@ class ApprovalGate:
 
     def consume(self, approval_id: str, request: ToolRequest) -> ApprovalRecord:
         """Atomically validate and spend an approval. Raises ApprovalError unless usable."""
-        record = self.get(approval_id)
+        with self._lock:
+            return self._consume(approval_id, request)
+
+    def _consume(self, approval_id: str, request: ToolRequest) -> ApprovalRecord:
+        record = self._get(approval_id)
         if record.status is not ApprovalStatus.APPROVED:
             raise ApprovalError("not_approved", f"approval is {record.status.value}")
         if record.consumed:
@@ -119,6 +141,8 @@ class ApprovalGate:
             record.request_id != request.request_id
             or record.tool != request.tool
             or record.action != request.action
+            or record.scope != request.scope
+            or record.requester != request.requester
             or record.arguments_digest != request.arguments_digest
         ):
             raise ApprovalError("mismatch", "approval does not match this exact request")

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import os
+import stat
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -68,9 +70,11 @@ class Policy:
             raise MalformedPolicyError("policy document is too large")
         try:
             raw = _load_json(text) if fmt == "json" else _load_yaml(text)
-        except (yaml.YAMLError, json.JSONDecodeError, ValueError) as exc:
-            raise MalformedPolicyError(f"policy is not valid {fmt}: {exc}") from exc
-        return _parse(raw)
+            return _parse(raw)
+        except MalformedPolicyError:
+            raise
+        except (yaml.YAMLError, ValueError, TypeError, RecursionError) as exc:
+            raise MalformedPolicyError(f"policy is not valid {fmt}: {type(exc).__name__}") from exc
 
     @classmethod
     def load(cls, path: str | Path) -> Policy:
@@ -78,11 +82,18 @@ class Policy:
         if p.suffix.lower() not in (".yaml", ".yml", ".json"):
             raise MalformedPolicyError("policy file must end in .yaml, .yml or .json")
         try:
-            if p.stat().st_size > MAX_POLICY_BYTES:
+            fd = os.open(p, os.O_RDONLY | os.O_NONBLOCK)  # never block on a FIFO
+            with os.fdopen(fd, "rb") as handle:
+                if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+                    raise MalformedPolicyError("policy path must be a regular file")
+                data = handle.read(MAX_POLICY_BYTES + 1)  # bounded even if stat lies
+            if len(data) > MAX_POLICY_BYTES:
                 raise MalformedPolicyError("policy document is too large")
-            text = p.read_text(encoding="utf-8")
+            text = data.decode("utf-8")
         except OSError as exc:
             raise MalformedPolicyError(f"cannot read policy file: {exc.strerror}") from exc
+        except UnicodeDecodeError as exc:
+            raise MalformedPolicyError("policy file is not valid UTF-8") from exc
         return cls.from_text(text, "json" if p.suffix.lower() == ".json" else "yaml")
 
     def validate_against(self, registry: ToolRegistry) -> None:

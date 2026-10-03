@@ -84,7 +84,7 @@ Threats mapped to controls and tests: [docs/threat-model.md](docs/threat-model.m
 | Deny by default | Unknown tools, actions and scopes are denied. A tool runs only if the policy lists it in `allowed_tools`. `denied_tools` always wins. There is no "default allow" switch: writing one is a policy error. |
 | Risk classification | Risk (`read`, `low`, `medium`, `high`, `critical`) is declared per tool and validated for consistency. It is not inferred from the model's wording. |
 | Scoped tools | Scopes are exact strings. A scope must be declared by the tool and explicitly granted to that tool by the policy. No wildcards. |
-| Approvals | Explicit, by a named identity other than the requester. States: pending, approved, rejected, expired. Single use, bound to the exact arguments, expiring. High-risk, external and critical actions always need one; a policy can add approvals but cannot remove them. |
+| Approvals | Explicit, by a named identity other than the requester. States: pending, approved, rejected, expired. Single use (atomic under concurrency), bound to the exact tool, scope, requester and arguments, expiring. High-risk, external and critical actions always need one; a policy can add approvals but cannot remove them. |
 | Verification | After execution the harness reads state back and applies per-tool checks. Only `VERIFIED` yields `COMPLETED`. `UNCERTAIN` is its own result and never collapses into success or failure. |
 | Evidence | Every stage emits an audit event carrying the full request state, chained by hash (optionally HMAC). Each request also gets a redacted evidence record bound to the log by digest. Secrets are redacted before anything is written. |
 
@@ -269,7 +269,7 @@ ruff check . && ruff format --check .
 mypy
 ```
 
-Measured on the final suite (Python 3.12.3, Linux): **304 tests passed, 0 failed, 98.49% line and
+Measured on the final suite (Python 3.12.3, Linux): **347 tests passed, 0 failed, 98.38% line and
 branch coverage** (gate: 90%). `ruff check`, `ruff format --check` and `mypy --strict` are clean. The
 suite is fully offline and deterministic (injected clock, simulated tools, no network).
 
@@ -304,7 +304,11 @@ docs/                        architecture and threat model
 * The audit chain detects edits, deletions and reordering. Without an externally recorded head hash
   or a protected HMAC key it cannot detect tail truncation or a full rewrite.
 * Redaction is pattern based and will not catch every secret. Audit and evidence records include
-  tool arguments after redaction, so avoid placing sensitive content in them.
+  tool arguments after redaction. A tool can mark an argument `sensitive` to mask it entirely (the
+  demo mail tools do this for `body`); everything else is logged, so avoid placing sensitive content
+  in arguments.
+* One process, one lock: requests are serialised and nothing is persisted. Requester identity is
+  supplied by the caller.
 * Policies and verification checks need domain-specific review before use with a real system.
 * No claim of regulatory compliance is made.
 

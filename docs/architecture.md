@@ -122,6 +122,7 @@ hash is anchored somewhere the attacker cannot write (or an HMAC key is used and
 
 | Situation | Behaviour |
 | --- | --- |
+| Concurrent resume of one approved request | Serialised; the approval is spent once |
 | Malformed request | Denied and audited with a reason; never raised to the caller |
 | Unknown tool / action / scope | Denied |
 | Malformed, ambiguous or registry-inconsistent policy | Harness refuses to start (`MalformedPolicyError`) |

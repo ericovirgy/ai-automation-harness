@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import re
 from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass, fields, replace
 from datetime import datetime
@@ -24,6 +25,7 @@ from ai_automation_harness.models import (
 from ai_automation_harness.redaction import redact
 
 GENESIS_HASH = "0" * 64
+_HASH_RE = re.compile(r"[0-9a-f]{64}")
 _VALID_RISK = {r.label for r in Risk} | {"unknown"}
 
 
@@ -84,6 +86,10 @@ class AuditEvent:
             value = getattr(self, name)
             if not isinstance(value, str) or not value:
                 raise AuditIntegrityError(f"audit field '{name}' is missing or empty")
+        for name in ("prev_hash", "hash"):
+            value = getattr(self, name)
+            if value != "pending" and not _HASH_RE.fullmatch(value):
+                raise AuditIntegrityError(f"audit field '{name}' is not a SHA-256 hex digest")
         if isinstance(self.seq, bool) or not isinstance(self.seq, int) or self.seq < 0:
             raise AuditIntegrityError("audit field 'seq' must be a non-negative int")
         enums: tuple[tuple[str, type[Any] | set[str]], ...] = (
@@ -97,7 +103,7 @@ class AuditEvent:
         for name, domain in enums:
             value = getattr(self, name)
             allowed = domain if isinstance(domain, set) else {m.value for m in domain}
-            if value not in allowed:
+            if not isinstance(value, str) or value not in allowed:
                 raise AuditIntegrityError(f"audit field '{name}' has an invalid value")
         if self.evidence_digest is not None and not isinstance(self.evidence_digest, str):
             raise AuditIntegrityError("audit field 'evidence_digest' must be a string or null")
@@ -180,7 +186,17 @@ def verify_chain(events: Iterable[AuditEvent], hmac_key: bytes | None = None) ->
     return count
 
 
+def _no_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise AuditIntegrityError("audit line contains a duplicate key")
+        result[key] = value
+    return result
+
+
 def load_jsonl(path: str | Path) -> list[AuditEvent]:
+    """Load a log. Lines must be in canonical form so every parser reads the same content."""
     events: list[AuditEvent] = []
     try:
         lines = Path(path).read_text(encoding="utf-8").splitlines()
@@ -190,7 +206,12 @@ def load_jsonl(path: str | Path) -> list[AuditEvent]:
         if not line.strip():
             continue
         try:
-            events.append(AuditEvent.from_dict(json.loads(line)))
-        except json.JSONDecodeError as exc:
-            raise AuditIntegrityError(f"line {number} is not valid JSON") from exc
+            event = AuditEvent.from_dict(json.loads(line, object_pairs_hook=_no_duplicate_keys))
+        except (ValueError, TypeError, RecursionError) as exc:
+            if isinstance(exc, AuditIntegrityError):
+                raise
+            raise AuditIntegrityError(f"line {number} is not valid audit JSON") from exc
+        if canonical_json(event.to_dict()) != line.strip():
+            raise AuditIntegrityError(f"line {number} is not in canonical form")
+        events.append(event)
     return events

@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from ai_automation_harness.errors import InvariantError
 from ai_automation_harness.models import canonical_json, sha256_hex
 
 
@@ -17,8 +18,10 @@ class EvidenceStore:
     def __init__(self) -> None:
         self._records: dict[str, dict[str, Any]] = {}
 
-    def put(self, ref: str, record: dict[str, Any]) -> str:
-        """Store a JSON-safe record and return its digest."""
+    def put(self, ref: str, record: dict[str, Any], *, overwrite: bool = False) -> str:
+        """Store a JSON-safe record and return its digest. Never replaces one silently."""
+        if ref in self._records and not overwrite:
+            raise InvariantError("evidence reference already exists")
         self._records[ref] = json.loads(canonical_json(record))
         return evidence_digest(self._records[ref])
 

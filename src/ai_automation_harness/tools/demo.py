@@ -92,6 +92,12 @@ def _out(ctx: VerificationContext, key: str) -> str:
     return value if isinstance(value, str) else ""
 
 
+def _req(ctx: VerificationContext, key: str) -> str:
+    """Value the agent asked for. Verification compares the result against the request."""
+    value = ctx.request.arguments.get(key)
+    return value if isinstance(value, str) else ""
+
+
 def _counter_delta(ctx: VerificationContext, key: str) -> int:
     return ctx.world.counters()[key] - ctx.before_counters[key]
 
@@ -117,9 +123,12 @@ def build_demo_registry() -> ToolRegistry:
         read_account,
         checks=(
             output_schema({"account_id": str, "owner": str, "status": str, "plan": str}),
+            invariant(
+                "output_matches_request", lambda c: _out(c, "account_id") == _req(c, "account_id")
+            ),
             expected_state(
                 "account_matches_source",
-                lambda c: c.world.get_account(_out(c, "account_id")),
+                lambda c: c.world.get_account(_req(c, "account_id")),
                 lambda c: {k: v for k, v in c.output.items() if k != "account_id"},
             ),
         ),
@@ -162,17 +171,18 @@ def build_demo_registry() -> ToolRegistry:
         read_file,
         checks=(
             output_schema({"path": str, "content": str, "sha256": str}),
+            invariant("output_matches_request", lambda c: _out(c, "path") == _req(c, "path")),
             expected_state(
                 "content_matches_source",
-                lambda c: c.world.read_file(_out(c, "path")),
+                lambda c: c.world.read_file(_req(c, "path")),
                 lambda c: c.output["content"],
             ),
         ),
     )
     mail_args = {
         "to": ArgSpec(pattern=EMAIL_PATTERN, max_length=254),
-        "subject": ArgSpec(max_length=120),
-        "body": ArgSpec(max_length=2000),
+        "subject": ArgSpec(max_length=120, pattern=r"[^\r\n]*"),  # no header injection
+        "body": ArgSpec(max_length=2000, sensitive=True),
     }
     registry.register(
         ToolSpec(
@@ -201,7 +211,12 @@ def build_demo_registry() -> ToolRegistry:
                 "exactly_one_draft_and_nothing_sent",
                 lambda c: _counter_delta(c, "drafts") == 1 and _counter_delta(c, "outbox") == 0,
             ),
-            evidence_exists("receipt_ref", lambda c, ref: c.world.get_receipt(ref)),
+            evidence_exists(
+                "receipt_ref",
+                lambda c, ref: (
+                    c.world.get_receipt(ref) if ref == f"receipt:{_out(c, 'draft_id')}" else None
+                ),
+            ),
         ),
     )
     registry.register(
@@ -229,7 +244,12 @@ def build_demo_registry() -> ToolRegistry:
                 },
             ),
             invariant("exactly_one_message_queued", lambda c: _counter_delta(c, "outbox") == 1),
-            evidence_exists("receipt_ref", lambda c, ref: c.world.get_receipt(ref)),
+            evidence_exists(
+                "receipt_ref",
+                lambda c, ref: (
+                    c.world.get_receipt(ref) if ref == f"receipt:{_out(c, 'message_id')}" else None
+                ),
+            ),
         ),
     )
     registry.register(
@@ -246,9 +266,10 @@ def build_demo_registry() -> ToolRegistry:
         delete_file,
         checks=(
             output_schema({"path": str, "deleted": bool}),
+            invariant("output_matches_request", lambda c: _out(c, "path") == _req(c, "path")),
             expected_state(
                 "file_is_absent",
-                lambda c: "absent" if not c.world.file_exists(_out(c, "path")) else "present",
+                lambda c: "absent" if not c.world.file_exists(_req(c, "path")) else "present",
                 lambda c: "absent",
             ),
             invariant(

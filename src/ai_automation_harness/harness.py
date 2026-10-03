@@ -6,6 +6,7 @@ the decision, approval, execution or verification fields.
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -113,16 +114,21 @@ class Harness:
         self.audit = audit if audit is not None else AuditLog(hmac_key)
         self.evidence = evidence if evidence is not None else EvidenceStore()
         self._states: dict[str, _RequestState] = {}
+        self._lock = threading.RLock()  # requests are processed one at a time
         self._unparsed = 0
         self._duplicates = 0
 
     # ------------------------------------------------------------------ public API
 
     def submit(self, raw: ToolRequest | Mapping[str, Any]) -> HarnessResult:
+        with self._lock:
+            return self._submit(raw)
+
+    def _submit(self, raw: ToolRequest | Mapping[str, Any]) -> HarnessResult:
         try:
-            request = raw if isinstance(raw, ToolRequest) else ToolRequest.from_mapping(raw)
+            request = raw if type(raw) is ToolRequest else ToolRequest.from_mapping(raw)
         except MalformedRequestError as exc:
-            return self.reject_malformed(str(exc))
+            return self._reject_malformed(str(exc))
         if request.request_id in self._states:
             return self._reject_duplicate(request)
 
@@ -154,17 +160,29 @@ class Harness:
         return self._execute_and_verify(state, None)
 
     def approve(self, approval_id: str, approver: str, note: str = "") -> None:
+        with self._lock:
+            self._approve(approval_id, approver, note)
+
+    def _approve(self, approval_id: str, approver: str, note: str) -> None:
         state = self._state_for_approval(approval_id)
         self._gate.approve(approval_id, approver, note)
         self._sync_approval(state)
 
     def reject(self, approval_id: str, approver: str, note: str = "") -> None:
+        with self._lock:
+            self._reject(approval_id, approver, note)
+
+    def _reject(self, approval_id: str, approver: str, note: str) -> None:
         state = self._state_for_approval(approval_id)
         self._gate.reject(approval_id, approver, note)
         self._sync_approval(state)
-        self.resume(state.request.request_id)  # rejection is terminal: finish and record it
+        self._resume(state.request.request_id)  # rejection is terminal: finish and record it
 
     def resume(self, request_id: str) -> HarnessResult:
+        with self._lock:
+            return self._resume(request_id)
+
+    def _resume(self, request_id: str) -> HarnessResult:
         state = self._states.get(request_id)
         if state is None:
             raise ApprovalError("unknown", "no such request")
@@ -272,7 +290,9 @@ class Harness:
         state.outcome = outcome
         state.finished = True
         record = self._evidence_record(state)
-        digest = self.evidence.put(state.evidence_ref, record)
+        digest = self.evidence.put(
+            state.evidence_ref, record, overwrite=state.approval_id is not None
+        )
         self._emit(state, "request.finished", evidence_digest=digest)
         return self._result(state)
 
@@ -288,7 +308,7 @@ class Harness:
                 "action": req.action,
                 "scope": req.scope,
                 "requester": req.requester,
-                "arguments": redact(dict(req.arguments)),
+                "arguments": redact(self._loggable_arguments(req)),
             },
             "policy_decision": state.decision.to_dict(),
             "approval": self._gate.get(state.approval_id).to_dict() if state.approval_id else None,
@@ -354,20 +374,32 @@ class Harness:
                 outcome=state.outcome.value,
                 evidence_ref=state.evidence_ref,
                 evidence_digest=evidence_digest,
-                arguments=dict(req.arguments),
+                arguments=self._loggable_arguments(req),
                 prev_hash="",
                 hash="",
             )
         )
+
+    def _loggable_arguments(self, request: ToolRequest) -> dict[str, Any]:
+        """Arguments as they may appear in logs: specs can mark a value as fully sensitive."""
+        spec = self._registry.get(request.tool)
+        masked = {n for n, a in spec.arguments.items() if a.sensitive} if spec else set()
+        return {k: "[REDACTED]" if k in masked else v for k, v in request.arguments.items()}
 
     def _synthetic_request(self, request_id: str, tool: str, action: str) -> ToolRequest:
         return ToolRequest(request_id, tool, action, "unparsed:request", {}, "unknown")
 
     def reject_malformed(self, message: str) -> HarnessResult:
         """Record a denial for input that could not be parsed into a request at all."""
+        with self._lock:
+            return self._reject_malformed(message)
+
+    def _reject_malformed(self, message: str) -> HarnessResult:
         self._unparsed += 1
         request = self._synthetic_request(f"unparsed-{self._unparsed:04d}", "unparsed", "unparsed")
-        return self._synthetic_denial(request, ReasonCode.MALFORMED_REQUEST, message)
+        return self._synthetic_denial(
+            request, ReasonCode.MALFORMED_REQUEST, message, ref=f"evx~unparsed~{self._unparsed:04d}"
+        )
 
     def _reject_duplicate(self, request: ToolRequest) -> HarnessResult:
         self._duplicates += 1
@@ -375,11 +407,11 @@ class Harness:
             request,
             ReasonCode.DUPLICATE_REQUEST_ID,
             "Request id was already used; replays are denied",
-            ref_suffix=f"-dup{self._duplicates}",
+            ref=f"evx~dup{self._duplicates}~{request.request_id}",
         )
 
     def _synthetic_denial(
-        self, request: ToolRequest, code: ReasonCode, message: str, ref_suffix: str = ""
+        self, request: ToolRequest, code: ReasonCode, message: str, ref: str
     ) -> HarnessResult:
         decision = PolicyDecision(
             Decision.DENY, request.tool, request.action, request.scope, None, code, message
@@ -387,7 +419,7 @@ class Harness:
         state = _RequestState(
             request=request,
             decision=decision,
-            evidence_ref=f"ev-{request.request_id}{ref_suffix}",
+            evidence_ref=ref,
             reason_code=code,
             reason=message,
         )

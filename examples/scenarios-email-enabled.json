@@ -1,0 +1,129 @@
+[
+  {
+    "name": "send_email_approved",
+    "description": "HIGH risk, external effect: needs approval, then verified in the outbox",
+    "request": {
+      "request_id": "e01",
+      "tool": "send_email",
+      "action": "send",
+      "scope": "email:send",
+      "arguments": {
+        "to": "alice@example.org",
+        "subject": "Q3 summary",
+        "body": "Final body"
+      },
+      "requester": "agent"
+    },
+    "expect": {
+      "decision": "REQUIRE_APPROVAL",
+      "outcome": "COMPLETED"
+    },
+    "approval": "approve"
+  },
+  {
+    "name": "send_email_unlisted_recipient",
+    "description": "Recipient outside allowlisted domain",
+    "request": {
+      "request_id": "e02",
+      "tool": "send_email",
+      "action": "send",
+      "scope": "email:send",
+      "arguments": {
+        "to": "mallory@evil.test",
+        "subject": "Q3 summary",
+        "body": "Final body"
+      },
+      "requester": "agent"
+    },
+    "expect": {
+      "decision": "DENY",
+      "outcome": "DENIED"
+    }
+  },
+  {
+    "name": "send_email_pending",
+    "description": "No approval: nothing is sent",
+    "request": {
+      "request_id": "e03",
+      "tool": "send_email",
+      "action": "send",
+      "scope": "email:send",
+      "arguments": {
+        "to": "alice@example.org",
+        "subject": "Q3 summary",
+        "body": "Final body"
+      },
+      "requester": "agent"
+    },
+    "expect": {
+      "decision": "REQUIRE_APPROVAL",
+      "outcome": "PENDING_APPROVAL"
+    }
+  },
+  {
+    "name": "send_email_silent_drop",
+    "description": "API says queued, outbox is empty: success is not verification",
+    "request": {
+      "request_id": "e04",
+      "tool": "send_email",
+      "action": "send",
+      "scope": "email:send",
+      "arguments": {
+        "to": "alice@example.org",
+        "subject": "Q3 summary",
+        "body": "Final body"
+      },
+      "requester": "agent"
+    },
+    "expect": {
+      "decision": "REQUIRE_APPROVAL",
+      "outcome": "EXECUTED_NOT_VERIFIED"
+    },
+    "approval": "approve",
+    "faults": [
+      "silent_drop_email"
+    ]
+  },
+  {
+    "name": "send_email_no_receipt",
+    "description": "Message queued but no delivery receipt: uncertain, not verified",
+    "request": {
+      "request_id": "e05",
+      "tool": "send_email",
+      "action": "send",
+      "scope": "email:send",
+      "arguments": {
+        "to": "alice@example.org",
+        "subject": "Q3 summary",
+        "body": "Final body"
+      },
+      "requester": "agent"
+    },
+    "expect": {
+      "decision": "REQUIRE_APPROVAL",
+      "outcome": "EXECUTED_UNCERTAIN"
+    },
+    "approval": "approve",
+    "faults": [
+      "omit_receipt_ref"
+    ]
+  },
+  {
+    "name": "delete_file_still_denied",
+    "description": "Enabling email does not enable deletion",
+    "request": {
+      "request_id": "e06",
+      "tool": "delete_file",
+      "action": "delete",
+      "scope": "files:delete",
+      "arguments": {
+        "path": "docs/readme.txt"
+      },
+      "requester": "agent"
+    },
+    "expect": {
+      "decision": "DENY",
+      "outcome": "DENIED"
+    }
+  }
+]

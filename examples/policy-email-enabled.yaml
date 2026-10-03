@@ -1,0 +1,42 @@
+# Same as policy.yaml, plus send_email limited to one recipient domain.
+# Sending still requires explicit human approval: tool declaration and external side effects
+# force it, and no policy value can remove that requirement.
+version: 1
+
+allowed_scopes:
+  - accounts:read
+  - records:read
+  - files:read
+  - drafts:write
+  - email:send
+
+allowed_tools:
+  read_account:
+    scopes: [accounts:read]
+  search_records:
+    scopes: [records:read]
+  read_file:
+    scopes: [files:read]
+    argument_allowlists:
+      path: ["docs/*"]
+  create_draft:
+    scopes: [drafts:write]
+    argument_allowlists:
+      to: ["*@example.org"]
+  send_email:
+    scopes: [email:send]
+    argument_allowlists:
+      to: ["*@example.org"]
+
+denied_tools:
+  - delete_file
+
+risk:
+  max_auto_risk: low
+  max_risk: high
+
+approvals:
+  ttl_seconds: 900
+
+verification:
+  required_from_risk: read

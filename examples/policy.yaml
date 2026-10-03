@@ -1,0 +1,38 @@
+# Restrictive baseline policy. Anything not listed here is denied.
+version: 1
+
+# Ceiling for scopes. Tool rules may only grant scopes from this list.
+allowed_scopes:
+  - accounts:read
+  - records:read
+  - files:read
+  - drafts:write
+
+# Explicit allow list. Each tool names the exact scopes it may use.
+allowed_tools:
+  read_account:
+    scopes: [accounts:read]
+  search_records:
+    scopes: [records:read]
+  read_file:
+    scopes: [files:read]
+    argument_allowlists:
+      path: ["docs/*"]
+  create_draft:
+    scopes: [drafts:write]
+    argument_allowlists:
+      to: ["*@example.org"]
+
+# Explicit deny always wins. A tool listed in both places makes the policy invalid.
+denied_tools:
+  - delete_file
+
+risk:
+  max_auto_risk: low # at or below: may run without approval
+  max_risk: high # above: denied outright, even with approval
+
+approvals:
+  ttl_seconds: 900
+
+verification:
+  required_from_risk: read # every tool at or above this risk must declare verification checks

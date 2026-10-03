@@ -148,6 +148,8 @@ class Harness:
             state.reason_code = ReasonCode.APPROVAL_PENDING
             state.reason = "Waiting for explicit human approval"
             self._emit(state, "approval.requested")
+            # A pending request is at rest: its evidence reference must already resolve.
+            self.evidence.put(state.evidence_ref, self._evidence_record(state))
             return self._result(state)
         return self._execute_and_verify(state, None)
 
